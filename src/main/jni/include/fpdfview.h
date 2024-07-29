@@ -21,6 +21,8 @@
 
 // PDF types
 typedef void* FPDF_ACTION;
+typedef void* FPDF_ANNOTATION;
+typedef void* FPDF_ATTACHMENT;
 typedef void* FPDF_BITMAP;
 typedef void* FPDF_BOOKMARK;
 typedef void* FPDF_CLIPPATH;
@@ -57,6 +59,8 @@ typedef char const* FPDF_LPCSTR;
 typedef int FPDF_RESULT;
 #endif
 
+
+
 // Duplex types
 typedef enum _FPDF_DUPLEXTYPE_ {
   DuplexUndefined = 0,
@@ -64,6 +68,26 @@ typedef enum _FPDF_DUPLEXTYPE_ {
   DuplexFlipShortEdge,
   DuplexFlipLongEdge
 } FPDF_DUPLEXTYPE;
+
+#ifndef _FS_DEF_STRUCTURE_QUADPOINTSF_
+#define _FS_DEF_STRUCTURE_QUADPOINTSF_
+typedef struct _FS_QUADPOINTSF {
+    FS_FLOAT x1;
+    FS_FLOAT y1;
+    FS_FLOAT x2;
+    FS_FLOAT y2;
+    FS_FLOAT x3;
+    FS_FLOAT y3;
+    FS_FLOAT x4;
+    FS_FLOAT y4;
+} FS_QUADPOINTSF;
+#endif
+// Annotation enums.
+typedef int FPDF_ANNOTATION_SUBTYPE;
+typedef int FPDF_ANNOT_APPEARANCEMODE;
+
+// Dictionary value types.
+typedef int FPDF_OBJECT_TYPE;
 
 // String types
 typedef unsigned short FPDF_WCHAR;
@@ -125,6 +149,21 @@ typedef struct _FS_RECTF_ {
 
 // Const Pointer to FS_RECTF structure.
 typedef const FS_RECTF* FS_LPCRECTF;
+
+// Rectangle size. Coordinate system agnostic.
+typedef struct FS_SIZEF_ {
+    float width;
+    float height;
+} * FS_LPSIZEF, FS_SIZEF;
+
+// Const Pointer to FS_SIZEF structure.
+typedef const FS_SIZEF* FS_LPCSIZEF;
+
+// 2D Point. Coordinate system agnostic.
+typedef struct FS_POINTF_ {
+    float x;
+    float y;
+} * FS_LPPOINTF, FS_POINTF;
 
 #if defined(_WIN32) && defined(FPDFSDK_EXPORTS)
 // On Windows system, functions are exported in a DLL

@@ -1,4 +1,7 @@
 #include "util.hpp"
+#include "fpdf_text.h"
+#include "fpdf_annot.h"
+#include <fpdfview.h>
 
 extern "C" {
     #include <unistd.h>
@@ -16,6 +19,7 @@ using namespace android;
 
 #include <fpdfview.h>
 #include <fpdf_doc.h>
+#include <fpdf_annot.h>
 #include <string>
 #include <vector>
 
@@ -165,6 +169,58 @@ void rgbBitmapTo565(void *source, int sourceStride, void *dest, AndroidBitmapInf
         source = (char*) source + sourceStride;
         dest = (char*) dest + info->stride;
     }
+}
+
+std::string UTF16ToUTF8(const unsigned short* utf16, size_t length) {
+    std::string utf8;
+    utf8.reserve(length * 3); // Reserve space, maximum 3 bytes per UTF-16 character
+
+    for (size_t i = 0; i < length; ++i) {
+        unsigned short ch = utf16[i];
+        if (ch <= 0x7F) {
+            utf8.push_back(static_cast<char>(ch));
+        } else if (ch <= 0x7FF) {
+            utf8.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+            utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+        } else if (ch >= 0xD800 && ch <= 0xDFFF) {
+            // Handle surrogate pairs
+            if (ch >= 0xD800 && ch <= 0xDBFF && i + 1 < length) {
+                unsigned short high = ch;
+                unsigned short low = utf16[++i];
+                if (low >= 0xDC00 && low <= 0xDFFF) {
+                    int codepoint = ((high - 0xD800) << 10) | (low - 0xDC00);
+                    codepoint += 0x10000;
+                    utf8.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+                    utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+                    utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+                    utf8.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+                } else {
+                    throw std::runtime_error("Invalid UTF-16 surrogate pair");
+                }
+            } else {
+                throw std::runtime_error("Unpaired surrogate character");
+            }
+        } else {
+            utf8.push_back(static_cast<char>(0xE0 | (ch >> 12)));
+            utf8.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+            utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+        }
+    }
+
+    return utf8;
+}
+
+std::string ExtractText(FPDF_TEXTPAGE text_page, int start_index, int count) {
+    // Allocate buffer for 'count' wide characters (UTF-16)
+    std::vector<unsigned short> buffer(count);
+
+    // Extract text into the buffer
+    if (FPDFText_GetText(text_page, start_index, count, buffer.data()) == 0) {
+        throw std::runtime_error("Failed to extract text from the PDF page");
+    }
+
+    // Convert the UTF-16 buffer to a UTF-8 string
+    return UTF16ToUTF8(buffer.data(), count);
 }
 
 extern "C" { //For JNI support
@@ -618,17 +674,211 @@ JNI_FUNC(jlong, PdfiumCore, nativeGetBookmarkDestIndex)(JNI_ARGS, jlong docPtr, 
     if (dest == NULL) {
         return -1;
     }
-    return (jlong) FPDFDest_GetPageIndex(doc->pdfDocument, dest);
+    return (jlong) 1;
+}
+bool IsCharacterUnderlined(FPDF_PAGE page, int char_index) {
+    int annot_count = FPDFPage_GetAnnotCount(page);
+    LOGD("All annotations count: %d", annot_count);
+    for (int i = 0; i < annot_count; ++i) {
+
+        // Get the annotation at the given index
+        FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, i);
+        if (!annot) {
+            continue;
+        }
+
+        // Get the subtype of the annotation
+        FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annot);
+        if (subtype == FPDF_ANNOT_UNDERLINE) {
+            LOGD("Underlined character found");
+            // Get the number of quads in the annotation
+            if(FPDFAnnot_HasAttachmentPoints(annot)) {
+
+                for (int j = 0; j < 8; ++j) {
+                    FS_QUADPOINTSF quad_points;
+                    if (FPDFAnnot_GetAttachmentPoints(annot, j, &quad_points)) {
+                        // Check if the character's bounding box overlaps with the quad points
+
+                        double left, right, bottom, top;
+                        FPDFText_GetCharBox(page, char_index, &left, &right, &bottom, &top);
+                        LOGD("Bounding box x1 %f", quad_points.x1);
+                        LOGD("Left coordinate of char %f", left);
+                        LOGD("Bounding box x3 %f", quad_points.x3);
+                        LOGD("Right coordinate of char %f", right);
+                        LOGD("Bounding box y1 %f", quad_points.y1);
+                        LOGD("Top coordinate of char %f", top);
+                        LOGD("Bounding box y3 %f", quad_points.y3);
+                        LOGD("Bottom coordinate of char %f", bottom);
+                        if (left >= quad_points.x1 && right <= quad_points.x3 &&
+                            bottom >= quad_points.y1 && top <= quad_points.y3) {
+                            LOGD("Character is found");
+                            FPDFPage_CloseAnnot(annot);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        FPDFPage_CloseAnnot(annot);
+    }
+
+    return false;
+}
+
+bool IsCharacterSpace(FPDF_TEXTPAGE text_page, int char_index) {
+    // Extract the character at the given index
+    std::string character = ExtractText(text_page, char_index, 1);
+
+    // Check if the extracted character is a space
+    return character == " ";
+}
+
+bool IsBoundingBoxSignificantlyDifferent(FPDF_TEXTPAGE text_page, int i, double threshold) {
+    double left1, right1, bottom1, top1;
+    double left2, right2, bottom2, top2;
+
+    // Get the bounding box for the character at index i
+    FPDFText_GetCharBox(text_page, i, &left1, &right1, &bottom1, &top1);
+    // Get the bounding box for the character at index i+1
+    FPDFText_GetCharBox(text_page, i + 1, &left2, &right2, &bottom2, &top2);
+
+    // Calculate differences
+    double diff_left = std::abs(left1 - left2);
+    double diff_right = std::abs(right1 - right2);
+    double diff_bottom = std::abs(bottom1 - bottom2);
+    double diff_top = std::abs(top1 - top2);
+
+    // Check if the differences exceed the threshold
+    return (diff_left > threshold) || (diff_right > threshold) || (diff_bottom > threshold) || (diff_top > threshold);
+}
+
+void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  FS_RECTF &rect, int &start_character_index, int &end_character_index) {
+    FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+    int text_length = FPDFText_CountChars(text_page);
+    int search_length = search_string.length();
+    LOGD("Text length %d", text_length);
+    LOGD("Search string %s", search_string.c_str());
+    std::string current_text;
+    for (int i = 0; i <= text_length - search_string.length(); ++i) {
+         current_text = ExtractText(text_page, i, search_string.length());
+//        std::string current_text = search_string;
+//        LOGD("Extracted text %s", current_text.c_str());
+//        LOGD("Index for extracted text %d", i);
+        if (current_text == search_string) {
+            LOGD("Plain text link found");
+
+            for (int j = 0; j < text_length; j++) {
+                if(IsBoundingBoxSignificantlyDifferent(text_page, i + j, 50)){
+                    LOGD("Character place jump %d", i+j);
+                    end_character_index = i + j ;
+                    break;
+
+                }
+                else{
+                    LOGD("Index %d is near previous character", i+j);
+                }
+            }
+            LOGD("Index for end character %d", end_character_index);
+
+            double left_start;
+            double right_start;
+            double top_start;
+            double bottom_start;
+            double left_end;
+            double right_end;
+            double top_end;
+            double bottom_end;
+            FPDFText_GetCharBox(text_page, i+end_character_index,
+                                &left_start,
+                                &right_start,
+                                &bottom_start,
+                                &top_start);
+
+            LOGD("Start rect");
+            LOGD("Plain text rectangle left %f", left_start);
+            LOGD("Plain text rectangle top %f", top_start);
+            LOGD("Plain text rectangle right %f", right_start);
+            LOGD("Plain text rectangle bottom %f", bottom_start);
+
+            FPDFText_GetCharBox(text_page, i+40, &left_end,
+                                &right_end,
+                                &bottom_end,
+                                &top_end);
+
+            LOGD("End rect");
+            LOGD("Plain text rectangle left %f", left_end);
+            LOGD("Plain text rectangle top %f", top_end);
+            LOGD("Plain text rectangle right %f", right_end);
+            LOGD("Plain text rectangle bottom %f", bottom_end);
+
+            rect.left = static_cast<float>(std::min(left_start, left_end));
+            rect.top = static_cast<float>(std::max(top_start, top_end));
+            rect.right = static_cast<float>(std::max(right_start, right_end));
+            rect.bottom = static_cast<float>(std::min(bottom_start, bottom_end));
+
+            LOGD("Result rect");
+            LOGD("Plain text rectangle left %f", rect.left);
+            LOGD("Plain text rectangle top %f", rect.top);
+            LOGD("Plain text rectangle right %f", rect.right);
+            LOGD("Plain text rectangle bottom %f", rect.bottom);
+
+            start_character_index = i;
+
+            return ;
+        }
+        current_text = "";
+    }
+//    LOGD("No plain text link founds");
+    FPDFText_ClosePage(text_page);
+    return ; // Return an empty rectangle if the text is not found
 }
 
 JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
     FPDF_PAGE page = reinterpret_cast<FPDF_PAGE>(pagePtr);
+    FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
     int pos = 0;
     std::vector<jlong> links;
     FPDF_LINK link;
+    LOGD("Get links");
+
+    std::string search_string = "http";
+    std::string uri = "";
+//    AnnotateTextWithLink(page, search_string, uri);
+    FS_RECTF rect;
+    int end_character_index = 0;
+    int start_character_index = 0;
+    GetRectangleForLinkText(page, search_string, rect, start_character_index, end_character_index);
+    LOGD("end_character_index %d", end_character_index);
+    LOGD("start_character_index %d", start_character_index);
+    LOGD("END rectangle left %f", rect.left);
+    uri = ExtractText(text_page, start_character_index, end_character_index-start_character_index + 1);
+    LOGD("URI %s", uri.c_str());
+    FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
+    FPDFAnnot_SetRect(annot, &rect);
+    FPDFAnnot_SetURI(annot, uri.c_str());
+
+//    FS_RECTF rect2;
+//    rect2.left = 100.0f;
+//    rect2.bottom = 100.0f;
+//    rect2.right = 200.0f;
+//    rect2.top = 200.0f;
+//    FPDF_ANNOTATION annot2 = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
+//    FPDFAnnot_SetRect(annot2, &rect2);
+//    FPDFAnnot_SetURI(annot2, "https://www.lgt.com");
+
+
+    FPDFPage_CloseAnnot(annot);
     while (FPDFLink_Enumerate(page, &pos, &link)) {
         links.push_back(reinterpret_cast<jlong>(link));
     }
+
+    // Get rectangle of string with www.
+//    FS_RECTF rect = GetRectangleForText(page);
+
+//    FPDF_LINK plainTextLink = FPDFLink_GetLinkAtPoint(page, rect.left, rect.top);
+//    links.push_back(reinterpret_cast<jlong>(plainTextLink));
+
 
     jlongArray result = env->NewLongArray(links.size());
     env->SetLongArrayRegion(result, 0, links.size(), &links[0]);
@@ -642,7 +892,7 @@ JNI_FUNC(jobject, PdfiumCore, nativeGetDestPageIndex)(JNI_ARGS, jlong docPtr, jl
     if (dest == NULL) {
         return NULL;
     }
-    unsigned long index = FPDFDest_GetPageIndex(doc->pdfDocument, dest);
+    unsigned long index = 1;
     return NewInteger(env, (jint) index);
 }
 

@@ -26,7 +26,7 @@ public class PdfiumCore {
             System.loadLibrary("c++_shared");
             System.loadLibrary("modpng");
             System.loadLibrary("modft2");
-            System.loadLibrary("modpdfium");
+            System.loadLibrary("pdfium");
             System.loadLibrary("jniPdfium");
         } catch (UnsatisfiedLinkError e) {
             Log.e(TAG, "Native libraries failed to load - " + e);
@@ -119,7 +119,7 @@ public class PdfiumCore {
     /** Context needed to get screen density */
     public PdfiumCore(Context ctx) {
         mCurrentDpi = ctx.getResources().getDisplayMetrics().densityDpi;
-        Log.d(TAG, "Starting PdfiumAndroid " + BuildConfig.VERSION_NAME);
+//        Log.d(TAG, "Starting PdfiumAndroid " + BuildConfig.VERSION_NAME);
     }
 
     /** Create new document from file */
