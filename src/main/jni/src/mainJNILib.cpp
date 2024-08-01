@@ -734,6 +734,7 @@ bool IsCharacterSpace(FPDF_TEXTPAGE text_page, int char_index) {
     return character == " ";
 }
 
+// Jump is between i and i+1
 bool IsBoundingBoxSignificantlyDifferent(FPDF_TEXTPAGE text_page, int i, double threshold) {
     double left1, right1, bottom1, top1;
     double left2, right2, bottom2, top2;
@@ -789,7 +790,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             double right_end;
             double top_end;
             double bottom_end;
-            FPDFText_GetCharBox(text_page, i+end_character_index,
+            FPDFText_GetCharBox(text_page, i,
                                 &left_start,
                                 &right_start,
                                 &bottom_start,
@@ -801,7 +802,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             LOGD("Plain text rectangle right %f", right_start);
             LOGD("Plain text rectangle bottom %f", bottom_start);
 
-            FPDFText_GetCharBox(text_page, i+40, &left_end,
+            FPDFText_GetCharBox(text_page, end_character_index, &left_end,
                                 &right_end,
                                 &bottom_end,
                                 &top_end);
@@ -857,15 +858,6 @@ JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
     FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
     FPDFAnnot_SetRect(annot, &rect);
     FPDFAnnot_SetURI(annot, uri.c_str());
-
-//    FS_RECTF rect2;
-//    rect2.left = 100.0f;
-//    rect2.bottom = 100.0f;
-//    rect2.right = 200.0f;
-//    rect2.top = 200.0f;
-//    FPDF_ANNOTATION annot2 = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
-//    FPDFAnnot_SetRect(annot2, &rect2);
-//    FPDFAnnot_SetURI(annot2, "https://www.lgt.com");
 
 
     FPDFPage_CloseAnnot(annot);
