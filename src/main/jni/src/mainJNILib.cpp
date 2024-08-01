@@ -794,14 +794,32 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             LOGD("Plain text rectangle right %f", right_start);
             LOGD("Plain text rectangle bottom %f", bottom_start);
 
-
+            bool break_outer_cycle = false;
             // Searching for the last character of the link.
             // Updating end_character_index if found.
             for (int j = 0; j < text_length; j++) {
                 if(IsBoundingBoxSignificantlyDifferent(text_page, end_character_index+ i + j, 50)){
                     LOGD("Character place jump %d. Updating end character index.", end_character_index + i + j);
-                    new_end_character_index = end_character_index + i + j ;
-                    break;
+                    for (int k = end_character_index + i; k < end_character_index + i + j; k++){
+                        // If jumping character found, we check for the previous characters for space.
+                        // If space found, that will be the link ending character.
+                        if(IsCharacterSpace(text_page, k)){
+                            LOGD("Space character found at %d. Updating end character index.", k);
+                            new_end_character_index = k ;
+                            break_outer_cycle = true;
+                            break;
+                        }
+                    }
+                    if(break_outer_cycle){
+                        break;
+                    }
+                    else {
+                        LOGD("Character place jump at %d. No space char found. Updating end character index.",
+                             end_character_index + i + j);
+                        new_end_character_index = end_character_index + i + j;
+                        break;
+                    }
+
 
                 }
                 else{
