@@ -754,33 +754,23 @@ bool IsBoundingBoxSignificantlyDifferent(FPDF_TEXTPAGE text_page, int i, double 
     return (diff_left > threshold) || (diff_right > threshold) || (diff_bottom > threshold) || (diff_top > threshold);
 }
 
-void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  FS_RECTF &rect, int &start_character_index, int &end_character_index) {
+void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  FS_RECTF &rect,
+                             int &start_character_index, int &end_character_index,
+                             int &new_start_character_index, int &new_end_character_index) {
     FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
     int text_length = FPDFText_CountChars(text_page);
     int search_length = search_string.length();
     LOGD("Text length %d", text_length);
     LOGD("Search string %s", search_string.c_str());
     std::string current_text;
-    for (int i = 0; i <= text_length - search_string.length(); ++i) {
-         current_text = ExtractText(text_page, i, search_string.length());
+    int i = 0;
+    for (end_character_index + i; (end_character_index + i) <= (text_length - search_string.length()); ++i) {
+         current_text = ExtractText(text_page, end_character_index + i, search_string.length());
 //        std::string current_text = search_string;
 //        LOGD("Extracted text %s", current_text.c_str());
 //        LOGD("Index for extracted text %d", i);
         if (current_text == search_string) {
             LOGD("Plain text link found");
-
-            for (int j = 0; j < text_length; j++) {
-                if(IsBoundingBoxSignificantlyDifferent(text_page, i + j, 50)){
-                    LOGD("Character place jump %d", i+j);
-                    end_character_index = i + j ;
-                    break;
-
-                }
-                else{
-                    LOGD("Index %d is near previous character", i+j);
-                }
-            }
-            LOGD("Index for end character %d", end_character_index);
 
             double left_start;
             double right_start;
@@ -790,7 +780,9 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             double right_end;
             double top_end;
             double bottom_end;
-            FPDFText_GetCharBox(text_page, i,
+            // Bounding box of the first found character of the link
+            new_start_character_index = end_character_index + i;
+            FPDFText_GetCharBox(text_page, new_start_character_index,
                                 &left_start,
                                 &right_start,
                                 &bottom_start,
@@ -802,7 +794,25 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             LOGD("Plain text rectangle right %f", right_start);
             LOGD("Plain text rectangle bottom %f", bottom_start);
 
-            FPDFText_GetCharBox(text_page, end_character_index, &left_end,
+
+            // Searching for the last character of the link.
+            // Updating end_character_index if found.
+            for (int j = 0; j < text_length; j++) {
+                if(IsBoundingBoxSignificantlyDifferent(text_page, end_character_index+ i + j, 50)){
+                    LOGD("Character place jump %d. Updating end character index.", end_character_index + i + j);
+                    new_end_character_index = end_character_index + i + j ;
+                    break;
+
+                }
+                else{
+                    LOGD("Index %d is near previous character", new_end_character_index + i + j);
+                }
+            }
+            LOGD("Index for end character %d", new_end_character_index);
+
+
+            // Bounding box of the last found character of the link
+            FPDFText_GetCharBox(text_page, new_end_character_index, &left_end,
                                 &right_end,
                                 &bottom_end,
                                 &top_end);
@@ -824,13 +834,16 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
             LOGD("Plain text rectangle right %f", rect.right);
             LOGD("Plain text rectangle bottom %f", rect.bottom);
 
-            start_character_index = i;
+
 
             return ;
         }
         current_text = "";
     }
-//    LOGD("No plain text link founds");
+    LOGD("No more plain text links founds");
+    new_end_character_index = text_length;
+    new_start_character_index = text_length;
+
     FPDFText_ClosePage(text_page);
     return ; // Return an empty rectangle if the text is not found
 }
@@ -838,6 +851,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
 JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
     FPDF_PAGE page = reinterpret_cast<FPDF_PAGE>(pagePtr);
     FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+
     int pos = 0;
     std::vector<jlong> links;
     FPDF_LINK link;
@@ -846,25 +860,41 @@ JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
     std::string search_string = "http";
     std::string uri = "";
 //    AnnotateTextWithLink(page, search_string, uri);
-    FS_RECTF rect;
-    int end_character_index = 0;
-    int start_character_index = 0;
-    GetRectangleForLinkText(page, search_string, rect, start_character_index, end_character_index);
-    LOGD("end_character_index %d", end_character_index);
-    LOGD("start_character_index %d", start_character_index);
-    LOGD("END rectangle left %f", rect.left);
-    uri = ExtractText(text_page, start_character_index, end_character_index-start_character_index + 1);
-    LOGD("URI %s", uri.c_str());
-    FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
-    FPDFAnnot_SetRect(annot, &rect);
-    FPDFAnnot_SetURI(annot, uri.c_str());
+    int text_length = FPDFText_CountChars(text_page);
+    int i = 0;
+    int link_end_character_index = i;
+    int link_start_character_index = i;
+    int new_link_end_character_index = 0;
+    int new_link_start_character_index = 0;
+    // Loop to iterate through all links. Each new iteration starts from the position of the
+    // end character of the previously found link.
+    while (i < text_length){
+        FS_RECTF rect;
+        link_end_character_index = i;
+        link_start_character_index = i;
+        GetRectangleForLinkText(page, search_string, rect,
+                                link_start_character_index, link_end_character_index,
+                                new_link_start_character_index, new_link_end_character_index);
+        LOGD("link_end_character_index %d", new_link_end_character_index);
+        LOGD("link_start_character_index %d", new_link_start_character_index);
+        LOGD("END rectangle left %f", rect.left);
+        if(new_link_end_character_index > new_link_start_character_index) {
+            uri = ExtractText(text_page, new_link_start_character_index,
+                              new_link_end_character_index - new_link_start_character_index + 1);
+            LOGD("URI %s", uri.c_str());
+            FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);
+            FPDFAnnot_SetRect(annot, &rect);
+            FPDFAnnot_SetURI(annot, uri.c_str());
 
+            FPDFPage_CloseAnnot(annot);
 
-    FPDFPage_CloseAnnot(annot);
+        }
+        i = new_link_end_character_index;
+    }
+
     while (FPDFLink_Enumerate(page, &pos, &link)) {
         links.push_back(reinterpret_cast<jlong>(link));
     }
-
     // Get rectangle of string with www.
 //    FS_RECTF rect = GetRectangleForText(page);
 
