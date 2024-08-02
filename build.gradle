@@ -11,17 +11,65 @@ buildscript {
 }
 
 apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
 
+def isAndroid = plugins.hasPlugin('com.android.library')
+
+task sourcesJar(type: Jar) {
+    archiveClassifier.set('sources')
+    if (isAndroid) {
+        from android.sourceSets.main.java.srcDirs
+    } else {
+        from sourceSets.main.allSource
+    }
+}
+
+task javadoc(type: Javadoc) {
+    if (isAndroid) {
+        def javaSrcDirs = android.sourceSets.main.java.srcDirs
+        if (!javaSrcDirs.isEmpty()) {
+            source = javaSrcDirs
+        } else {
+            throw new GradleException("Java source directories are empty or null.")
+        }
+    } else {
+        source = sourceSets.main.allSource
+    }
+    options.addStringOption('Xdoclint:none', '-quiet')
+
+}
+
+afterEvaluate {
+    if (isAndroid) {
+        javadoc.classpath += files(android.libraryVariants.collect { variant ->
+            variant.javaCompileProvider.get().classpath.files
+        })
+        javadoc.classpath += files("${android.sdkDirectory}/platforms/${android.compileSdkVersion}/android.jar")
+    }
+    javadoc.dependsOn 'generateDebugRFile'
+    javadoc.dependsOn 'generateReleaseRFile'
+}
+
+// Task to generate Javadoc JAR
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    archiveClassifier.set('javadoc')
+    from javadoc.destinationDir
+    dependsOn javadoc
+}
+
+artifacts {
+    archives sourcesJar
+    archives javadocJar
+}
 
 android {
     namespace "com.shockwave.pdfium"
     compileSdkVersion 34
-
     defaultConfig {
         minSdkVersion 30
         targetSdkVersion 34
         versionCode 1
-        versionName "1.9.0"
+        versionName "1.9.1"
     }
     buildTypes {
         release {
@@ -36,8 +84,9 @@ android {
         }
     }
 
-    sourceSets{
+    sourceSets {
         main {
+            java.srcDirs = ['src/main/java']
             jni.srcDirs = ['libs']
             jniLibs.srcDir 'src/main/libs'
         }
@@ -51,9 +100,34 @@ repositories {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-
+    implementation 'com.android.support:support-annotations:28.0.0'
 }
+
 afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                afterEvaluate {
+                    if (isAndroid) {
+                        from components.findByName('release')
+                    } else {
+                        from components.java
+                    }
+                }
+
+                artifact sourcesJar
+                artifact javadocJar
+
+                groupId = 'com.github.zoltaneusz'
+                artifactId = 'pdfium-android'
+                version = '1.9.1'
+            }
+        }
+        repositories {
+            mavenLocal()
+            maven { url 'https://jitpack.io' }
+        }
+    }
     tasks.getByPath(':assembleRelease').doLast {
         copy {
             from("$buildDir/intermediates/merged_native_libs/release/out/lib/")
@@ -62,3 +136,8 @@ afterEvaluate {
     }
 }
 
+tasks.whenTaskAdded { task ->
+    if (task.name == 'publishReleasePublicationToMavenLocal') {
+        task.dependsOn('build')
+    }
+}
