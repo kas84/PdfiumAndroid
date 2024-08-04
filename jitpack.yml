@@ -5,4 +5,8 @@ install:
   - ./gradlew clean assembleRelease
 
 script:
-  - ./gradlew publishReleasePublicationToMavenLocal
+  - ./gradlew assembleRelease
+
+build:
+  output:
+    - build/outputs/aar/*.aar
