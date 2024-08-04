@@ -6,6 +6,7 @@ install:
 
 script:
   - ./gradlew assembleRelease
+  - ./gradlew publishToMavenLocal
 
 build:
   output:
