@@ -1,0 +1,5 @@
+install:
+  - ./gradlew clean assembleRelease
+  -
+script:
+  - ./gradlew publishReleasePublicationToMavenLocal
