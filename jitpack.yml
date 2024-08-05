@@ -1,14 +1,3 @@
 jdk:
   - openjdk17
 
-install:
-  - ./gradlew clean assembleRelease
-
-script:
-  - ./gradlew assembleRelease
-  - ./gradlew publishToMavenLocal
-  - ./gradlew publishReleasePublicationToMavenLocal
-
-build:
-  output:
-    - build/outputs/aar/*.aar

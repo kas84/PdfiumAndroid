@@ -2,15 +2,14 @@ buildscript {
     repositories {
         jcenter()
         google()
-        mavenLocal()
-        maven { url 'https://jitpack.io' }
     }
 
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.2'
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.1'
+        classpath 'com.github.dcendents:android-maven-gradle-plugin:2.1'
     }
 }
+
 
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
@@ -150,3 +149,11 @@ tasks.whenTaskAdded { task ->
         task.dependsOn('build')
     }
 }
+allprojects {
+    repositories {
+        google()
+        maven { url "https://jitpack.io" }
+        mavenCentral()
+    }
+}
+
