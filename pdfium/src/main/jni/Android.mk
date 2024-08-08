@@ -40,7 +40,7 @@ LOCAL_MODULE := jniPdfium
 
 LOCAL_CFLAGS += -DHAVE_PTHREADS
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
-LOCAL_SHARED_LIBRARIES += aospPdfium
+LOCAL_SHARED_LIBRARIES := aospPdfium libmodc++_shared libmodft2 libmodpng
 LOCAL_LDLIBS += -llog -landroid -ljnigraphics
 
 LOCAL_SRC_FILES :=  $(LOCAL_PATH)/src/mainJNILib.cpp
