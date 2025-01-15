@@ -1,3 +1,4 @@
+#include <iostream>
 #include "util.hpp"
 #include "fpdf_text.h"
 #include "fpdf_annot.h"
@@ -22,6 +23,70 @@ using namespace android;
 #include <fpdf_annot.h>
 #include <string>
 #include <vector>
+
+
+class PDFLinkHandlerInterface{
+public:
+    virtual ~PDFLinkHandlerInterface() = default;
+    virtual std::string ExtractText(FPDF_TEXTPAGE text_page, int start_index, int count) = 0;
+    virtual std::string UTF16ToUTF8(const unsigned short* utf16, size_t length) = 0;
+};
+
+class PDFLinkHandlerImpl : public PDFLinkHandlerInterface{
+public:
+    std::string ExtractText(FPDF_TEXTPAGE text_page, int start_index, int count) {
+        std::cout << "Debug log: Original ExtractText called" << std::endl;
+        // Allocate buffer for 'count' wide characters (UTF-16)
+        std::vector<unsigned short> buffer(count);
+
+        // Extract text into the buffer
+        if (FPDFText_GetText(text_page, start_index, count, buffer.data()) == 0) {
+            throw std::runtime_error("Failed to extract text from the PDF page");
+        }
+
+        // Convert the UTF-16 buffer to a UTF-8 string
+        return UTF16ToUTF8(buffer.data(), count);
+    }
+
+    std::string UTF16ToUTF8(const unsigned short* utf16, size_t length) {
+        std::string utf8;
+        utf8.reserve(length * 3); // Reserve space, maximum 3 bytes per UTF-16 character
+
+        for (size_t i = 0; i < length; ++i) {
+            unsigned short ch = utf16[i];
+            if (ch <= 0x7F) {
+                utf8.push_back(static_cast<char>(ch));
+            } else if (ch <= 0x7FF) {
+                utf8.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+                utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+            } else if (ch >= 0xD800 && ch <= 0xDFFF) {
+                // Handle surrogate pairs
+                if (ch >= 0xD800 && ch <= 0xDBFF && i + 1 < length) {
+                    unsigned short high = ch;
+                    unsigned short low = utf16[++i];
+                    if (low >= 0xDC00 && low <= 0xDFFF) {
+                        int codepoint = ((high - 0xD800) << 10) | (low - 0xDC00);
+                        codepoint += 0x10000;
+                        utf8.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+                        utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+                        utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+                        utf8.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+                    } else {
+                        throw std::runtime_error("Invalid UTF-16 surrogate pair");
+                    }
+                } else {
+                    throw std::runtime_error("Unpaired surrogate character");
+                }
+            } else {
+                utf8.push_back(static_cast<char>(0xE0 | (ch >> 12)));
+                utf8.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+                utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+            }
+        }
+
+        return utf8;
+    }
+};
 
 static Mutex sLibraryLock;
 
@@ -171,57 +236,6 @@ void rgbBitmapTo565(void *source, int sourceStride, void *dest, AndroidBitmapInf
     }
 }
 
-std::string UTF16ToUTF8(const unsigned short* utf16, size_t length) {
-    std::string utf8;
-    utf8.reserve(length * 3); // Reserve space, maximum 3 bytes per UTF-16 character
-
-    for (size_t i = 0; i < length; ++i) {
-        unsigned short ch = utf16[i];
-        if (ch <= 0x7F) {
-            utf8.push_back(static_cast<char>(ch));
-        } else if (ch <= 0x7FF) {
-            utf8.push_back(static_cast<char>(0xC0 | (ch >> 6)));
-            utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
-        } else if (ch >= 0xD800 && ch <= 0xDFFF) {
-            // Handle surrogate pairs
-            if (ch >= 0xD800 && ch <= 0xDBFF && i + 1 < length) {
-                unsigned short high = ch;
-                unsigned short low = utf16[++i];
-                if (low >= 0xDC00 && low <= 0xDFFF) {
-                    int codepoint = ((high - 0xD800) << 10) | (low - 0xDC00);
-                    codepoint += 0x10000;
-                    utf8.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
-                    utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-                    utf8.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-                    utf8.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-                } else {
-                    throw std::runtime_error("Invalid UTF-16 surrogate pair");
-                }
-            } else {
-                throw std::runtime_error("Unpaired surrogate character");
-            }
-        } else {
-            utf8.push_back(static_cast<char>(0xE0 | (ch >> 12)));
-            utf8.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
-            utf8.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
-        }
-    }
-
-    return utf8;
-}
-
-std::string ExtractText(FPDF_TEXTPAGE text_page, int start_index, int count) {
-    // Allocate buffer for 'count' wide characters (UTF-16)
-    std::vector<unsigned short> buffer(count);
-
-    // Extract text into the buffer
-    if (FPDFText_GetText(text_page, start_index, count, buffer.data()) == 0) {
-        throw std::runtime_error("Failed to extract text from the PDF page");
-    }
-
-    // Convert the UTF-16 buffer to a UTF-8 string
-    return UTF16ToUTF8(buffer.data(), count);
-}
 
 extern "C" { //For JNI support
 
@@ -726,9 +740,9 @@ bool IsCharacterUnderlined(FPDF_PAGE page, int char_index) {
     return false;
 }
 
-bool IsCharacterSpace(FPDF_TEXTPAGE text_page, int char_index) {
+bool IsCharacterSpace(FPDF_TEXTPAGE text_page, int char_index, PDFLinkHandlerInterface *pdfLinkHandler) {
     // Extract the character at the given index
-    std::string character = ExtractText(text_page, char_index, 1);
+    std::string character = (*pdfLinkHandler).ExtractText(text_page, char_index, 1);
 
     // Check if the extracted character is a space
     return character == " ";
@@ -757,6 +771,7 @@ bool IsBoundingBoxSignificantlyDifferent(FPDF_TEXTPAGE text_page, int i, double 
 void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  FS_RECTF &rect,
                              int &start_character_index, int &end_character_index,
                              int &new_start_character_index, int &new_end_character_index) {
+    PDFLinkHandlerImpl pdfLinkHandler;
     FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
     int text_length = FPDFText_CountChars(text_page);
     int search_length = search_string.length();
@@ -765,7 +780,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
     std::string current_text;
     int i = 0;
     for (end_character_index + i; (end_character_index + i) <= (text_length - search_string.length()); ++i) {
-         current_text = ExtractText(text_page, end_character_index + i, search_string.length());
+         current_text = pdfLinkHandler.ExtractText(text_page, end_character_index + i, search_string.length());
 //        std::string current_text = search_string;
 //        LOGD("Extracted text %s", current_text.c_str());
 //        LOGD("Index for extracted text %d", i);
@@ -803,7 +818,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
                     for (int k = end_character_index + i; k < end_character_index + i + j; k++){
                         // If jumping character found, we check for the previous characters for space.
                         // If space found, that will be the link ending character.
-                        if(IsCharacterSpace(text_page, k)){
+                        if(IsCharacterSpace(text_page, k, &pdfLinkHandler)){
                             LOGD("Space character found at %d. Updating end character index.", k);
                             new_end_character_index = k ;
                             break_outer_cycle = true;
@@ -867,6 +882,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
 }
 
 JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
+    PDFLinkHandlerImpl pdfLinkHandler;
     FPDF_PAGE page = reinterpret_cast<FPDF_PAGE>(pagePtr);
     FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
 
@@ -897,7 +913,7 @@ JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
         LOGD("link_start_character_index %d", new_link_start_character_index);
         LOGD("END rectangle left %f", rect.left);
         if(new_link_end_character_index > new_link_start_character_index) {
-            uri = ExtractText(text_page, new_link_start_character_index,
+            uri = pdfLinkHandler.ExtractText(text_page, new_link_start_character_index,
                               new_link_end_character_index - new_link_start_character_index + 1);
             LOGD("URI %s", uri.c_str());
             FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_LINK);

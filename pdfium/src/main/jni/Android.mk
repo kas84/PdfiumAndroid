@@ -46,3 +46,50 @@ LOCAL_LDLIBS += -llog -landroid -ljnigraphics
 LOCAL_SRC_FILES :=  $(LOCAL_PATH)/src/mainJNILib.cpp
 
 include $(BUILD_SHARED_LIBRARY)
+
+# Google Test libraries (GTest and GMock)
+# GTest
+include $(CLEAR_VARS)
+LOCAL_MODULE := gtest
+LOCAL_SRC_FILES := $(LOCAL_PATH)/gtest/googletest/src
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/gtest/googletest/include
+include $(BUILD_SHARED_LIBRARY)
+
+# GMock
+include $(CLEAR_VARS)
+LOCAL_MODULE := gmock
+LOCAL_SRC_FILES := $(LOCAL_PATH)/gtest/googlemock/src
+LOCAL_C_INCLUDES := \
+    $(LOCAL_PATH)/gtest/googlemock/include \
+    $(LOCAL_PATH)/gtest/googletest/include
+include $(BUILD_SHARED_LIBRARY)
+
+# Unit Test Target
+include $(CLEAR_VARS)
+LOCAL_MODULE := test_jniPdfium
+
+LOCAL_CFLAGS += -DHAVE_PTHREADS -DUNIT_TESTING
+LOCAL_LDLIBS += -llog -landroid -ljnigraphics -lz
+
+LOCAL_SRC_FILES := \
+    $(LOCAL_PATH)/test/test_mainJNILib.cpp\
+  gtest/googlemock/src/gmock-all.cc \
+  gtest/googletest/src/gtest-all.cc
+
+LOCAL_C_INCLUDES := \
+    $(LOCAL_PATH)/include \
+    $(LOCAL_PATH)/gtest/googletest/include \
+    $(LOCAL_PATH)/gtest/googlemock/include
+
+LOCAL_SHARED_LIBRARIES := \
+    gtest \
+    gmock \
+    aospPdfium \
+    libmodc++_shared \
+    libmodft2 \
+    libmodpng
+
+LOCAL_STATIC_LIBRARIES := libmodc++_shared
+
+
+include $(BUILD_EXECUTABLE)
