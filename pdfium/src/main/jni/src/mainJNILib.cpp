@@ -35,7 +35,6 @@ public:
 class PDFLinkHandlerImpl : public PDFLinkHandlerInterface{
 public:
     std::string ExtractText(FPDF_TEXTPAGE text_page, int start_index, int count) {
-        std::cout << "Debug log: Original ExtractText called" << std::endl;
         // Allocate buffer for 'count' wide characters (UTF-16)
         std::vector<unsigned short> buffer(count);
 
@@ -803,12 +802,6 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
                                 &bottom_start,
                                 &top_start);
 
-            LOGD("Start rect");
-            LOGD("Plain text rectangle left %f", left_start);
-            LOGD("Plain text rectangle top %f", top_start);
-            LOGD("Plain text rectangle right %f", right_start);
-            LOGD("Plain text rectangle bottom %f", bottom_start);
-
             bool break_outer_cycle = false;
             // Searching for the last character of the link.
             // Updating end_character_index if found.
@@ -838,7 +831,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
 
                 }
                 else{
-                    LOGD("Index %d is near previous character", new_end_character_index + i + j);
+                    // "Index %d is near previous character", new_end_character_index + i + j
                 }
             }
             LOGD("Index for end character %d", new_end_character_index);
@@ -850,24 +843,17 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
                                 &bottom_end,
                                 &top_end);
 
-            LOGD("End rect");
-            LOGD("Plain text rectangle left %f", left_end);
-            LOGD("Plain text rectangle top %f", top_end);
-            LOGD("Plain text rectangle right %f", right_end);
-            LOGD("Plain text rectangle bottom %f", bottom_end);
-
+            // Add 10 pixels vertically to make link easier to click
             rect.left = static_cast<float>(std::min(left_start, left_end));
-            rect.top = static_cast<float>(std::max(top_start, top_end));
+            rect.top = static_cast<float>(std::max(top_start, top_end) - 10);
             rect.right = static_cast<float>(std::max(right_start, right_end));
-            rect.bottom = static_cast<float>(std::min(bottom_start, bottom_end));
+            rect.bottom = static_cast<float>(std::min(bottom_start, bottom_end) + 10);
 
             LOGD("Result rect");
             LOGD("Plain text rectangle left %f", rect.left);
             LOGD("Plain text rectangle top %f", rect.top);
             LOGD("Plain text rectangle right %f", rect.right);
             LOGD("Plain text rectangle bottom %f", rect.bottom);
-
-
 
             return ;
         }
@@ -909,9 +895,6 @@ JNI_FUNC(jlongArray, PdfiumCore, nativeGetPageLinks)(JNI_ARGS, jlong pagePtr) {
         GetRectangleForLinkText(page, search_string, rect,
                                 link_start_character_index, link_end_character_index,
                                 new_link_start_character_index, new_link_end_character_index);
-        LOGD("link_end_character_index %d", new_link_end_character_index);
-        LOGD("link_start_character_index %d", new_link_start_character_index);
-        LOGD("END rectangle left %f", rect.left);
         if(new_link_end_character_index > new_link_start_character_index) {
             uri = pdfLinkHandler.ExtractText(text_page, new_link_start_character_index,
                               new_link_end_character_index - new_link_start_character_index + 1);
