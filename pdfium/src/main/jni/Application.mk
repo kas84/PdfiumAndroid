@@ -3,7 +3,7 @@ APP_CPPFLAGS += -fexceptions
 
 #For ANativeWindow support
 APP_PLATFORM = android-19
-
+APP_PAGE_SIZE := 16384
 APP_ABI :=  armeabi-v7a \
             arm64-v8a \
             x86 \

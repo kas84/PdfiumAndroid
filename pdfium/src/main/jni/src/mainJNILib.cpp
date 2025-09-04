@@ -859,7 +859,7 @@ void GetRectangleForLinkText(FPDF_PAGE page, const std::string& search_string,  
         }
         current_text = "";
     }
-    LOGD("No more plain text links founds");
+    LOGD("No more plain text links found");
     new_end_character_index = text_length;
     new_start_character_index = text_length;
 
