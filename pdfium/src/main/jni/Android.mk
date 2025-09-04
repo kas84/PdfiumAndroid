@@ -44,6 +44,7 @@ LOCAL_SHARED_LIBRARIES := aospPdfium libmodc++_shared libmodft2 libmodpng
 LOCAL_LDLIBS += -llog -landroid -ljnigraphics
 
 LOCAL_SRC_FILES :=  $(LOCAL_PATH)/src/mainJNILib.cpp
+LOCAL_LDFLAGS += "-Wl,-z,max-page-size=16384"
 
 include $(BUILD_SHARED_LIBRARY)
 
