@@ -48,6 +48,7 @@ LOCAL_LDFLAGS += "-Wl,-z,max-page-size=16384"
 
 include $(BUILD_SHARED_LIBRARY)
 
+ifeq ($(TARGET_BUILD_VARIANT),debug)
 # Google Test libraries (GTest and GMock)
 # GTest
 include $(CLEAR_VARS)
@@ -94,3 +95,4 @@ LOCAL_STATIC_LIBRARIES := libmodc++_shared
 
 
 include $(BUILD_EXECUTABLE)
+endif
